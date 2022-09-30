@@ -101,6 +101,18 @@ func buildLokiConfig(c *LokiConfig) (loki.Config, error) {
 			MaxRetries: c.MaxRetries,
 		},
 	}
+	/* TODO: fix. By any reason, the following client config returns proxyconnect connection refused errors
+	          "clientConfig": {
+	            "proxy_url": null,
+	            "tls_config": {
+	              "insecure_skip_verify": false
+	            },
+	            "follow_redirects": false
+	          },
+		Strangely, this doesn't happen in flowlogs-pipeline, even if this code is mostly copied from there
+	 */
+	c.ClientConfig = nil
+
 	if c.ClientConfig != nil {
 		cfg.Client = *c.ClientConfig
 	}
@@ -223,13 +235,13 @@ func newWriteLoki(cfg *LokiConfig) (*lokiWriter, error) {
 		return nil, fmt.Errorf("the provided config is not valid: %w", err)
 	}
 
-	lokiConfig, buildconfigErr := buildLokiConfig(cfg)
-	if buildconfigErr != nil {
-		return nil, fmt.Errorf("building loki config: %w", buildconfigErr)
+	lokiConfig, err := buildLokiConfig(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("building loki config: %w", err)
 	}
-	client, newWithLoggerErr := loki.NewWithLogger(lokiConfig, logAdapter.NewLogger(log.WithField("module", "export/loki")))
-	if newWithLoggerErr != nil {
-		return nil, newWithLoggerErr
+	client, err := loki.NewWithLogger(lokiConfig, logAdapter.NewLogger(log.WithField("module", "export/loki")))
+	if err != nil {
+		return nil, err
 	}
 
 	timestampScale, err := time.ParseDuration(cfg.TimestampScale)

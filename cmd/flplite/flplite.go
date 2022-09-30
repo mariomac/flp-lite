@@ -70,6 +70,7 @@ func main() {
 	if cfg.Health != nil && cfg.Health.Port > 0 {
 		hp = cfg.Health.Port
 	}
+
 	// TODO: proper health check
 	operational.NewHealthServer(hp, func() error { return nil }, func() error { return nil })
 
