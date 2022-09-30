@@ -25,7 +25,7 @@ import (
 	"github.com/prometheus/common/model"
 )
 
-type LokiCfg struct {
+type LokiConfig struct {
 	URL            string                       `yaml:"url,omitempty" json:"url,omitempty" doc:"the address of an existing Loki service to push the flows to"`
 	TenantID       string                       `yaml:"tenantID,omitempty" json:"tenantID,omitempty" doc:"identifies the tenant for the request"`
 	BatchWait      string                       `yaml:"batchWait,omitempty" json:"batchWait,omitempty" doc:"maximum amount of time to wait before sending a batch"`
@@ -46,7 +46,7 @@ type LokiCfg struct {
 	TimestampScale string `yaml:"timestampScale,omitempty" json:"timestampScale,omitempty" doc:"timestamp units scale (e.g. for UNIX = 1s)"`
 }
 
-func (w *LokiCfg) SetDefaults() {
+func (w *LokiConfig) SetDefaults() {
 	if w.BatchWait == "" {
 		w.BatchWait = "1s"
 	}
@@ -73,7 +73,7 @@ func (w *LokiCfg) SetDefaults() {
 	}
 }
 
-func (wl *LokiCfg) Validate() error {
+func (wl *LokiConfig) Validate() error {
 	if wl == nil {
 		return errors.New("you must provide a configuration")
 	}

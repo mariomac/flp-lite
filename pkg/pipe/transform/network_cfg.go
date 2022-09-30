@@ -1,13 +1,13 @@
 package transform
 
-type NetworkCfg struct {
+type NetworkConfig struct {
 	Rules          NetworkTransformRules `yaml:"rules" json:"rules" doc:"list of transform rules, each includes:"`
 	KubeConfigPath string                `yaml:"kubeConfigPath,omitempty" json:"kubeConfigPath,omitempty" doc:"path to kubeconfig file (optional)"`
 	ServicesFile   string                `yaml:"servicesFile,omitempty" json:"servicesFile,omitempty" doc:"path to services file (optional, default: /etc/services)"`
 	ProtocolsFile  string                `yaml:"protocolsFile,omitempty" json:"protocolsFile,omitempty" doc:"path to protocols file (optional, default: /etc/protocols)"`
 }
 
-func (tn *NetworkCfg) GetServiceFiles() (string, string) {
+func (tn *NetworkConfig) GetServiceFiles() (string, string) {
 	p := tn.ProtocolsFile
 	if p == "" {
 		p = "/etc/protocols"

@@ -42,7 +42,7 @@ type emitter interface {
 	Handle(labels model.LabelSet, timestamp time.Time, record string) error
 }
 
-func Loki(cfg *LokiCfg) (node.TerminalFunc[map[string]interface{}], error) {
+func Loki(cfg *LokiConfig) (node.TerminalFunc[map[string]interface{}], error) {
 	log.Debug("instantiating Loki writer")
 	lw, err := newWriteLoki(cfg)
 	if err != nil {
@@ -62,14 +62,14 @@ func Loki(cfg *LokiCfg) (node.TerminalFunc[map[string]interface{}], error) {
 // Loki record writer
 type lokiWriter struct {
 	lokiConfig     loki.Config
-	cfg            *LokiCfg
+	cfg            *LokiConfig
 	timestampScale float64
 	saneLabels     map[string]model.LabelName
 	client         emitter
 	timeNow        func() time.Time
 }
 
-func buildLokiConfig(c *LokiCfg) (loki.Config, error) {
+func buildLokiConfig(c *LokiConfig) (loki.Config, error) {
 	batchWait, err := time.ParseDuration(c.BatchWait)
 	if err != nil {
 		return loki.Config{}, fmt.Errorf("failed in parsing BatchWait : %v", err)
@@ -215,7 +215,7 @@ func getFloat64(timestamp interface{}) (ft float64, ok bool) {
 }
 
 // newWriteLoki creates a Loki writer from configuration
-func newWriteLoki(cfg *LokiCfg) (*lokiWriter, error) {
+func newWriteLoki(cfg *LokiConfig) (*lokiWriter, error) {
 	// need to combine defaults with parameters that are provided in the config yaml file
 	cfg.SetDefaults()
 

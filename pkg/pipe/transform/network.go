@@ -23,15 +23,15 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/mariomac/flplite/pkg/transform/kubernetes"
-	netdb "github.com/mariomac/flplite/pkg/transform/netdb"
+	"github.com/mariomac/flplite/pkg/pipe/transform/kubernetes"
+	"github.com/mariomac/flplite/pkg/pipe/transform/netdb"
 	"github.com/mariomac/pipes/pkg/node"
 	"github.com/sirupsen/logrus"
 )
 
 var log = logrus.WithField("component", "transform.Network")
 
-func Network(cfg *NetworkCfg) (node.MiddleFunc[map[string]interface{}, map[string]interface{}], error) {
+func Network(cfg *NetworkConfig) (node.MiddleFunc[map[string]interface{}, map[string]interface{}], error) {
 	nt, err := newTransformNetwork(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("instantiating network transformer: %w", err)
@@ -47,7 +47,7 @@ func Network(cfg *NetworkCfg) (node.MiddleFunc[map[string]interface{}, map[strin
 
 type networkTransformer struct {
 	kube     kubernetes.KubeData
-	cfg      *NetworkCfg
+	cfg      *NetworkConfig
 	svcNames *netdb.ServiceNames
 }
 
@@ -96,7 +96,7 @@ func (n *networkTransformer) transform(input map[string]interface{}) map[string]
 		case "add_kubernetes":
 			kubeInfo, err := n.kube.GetInfo(fmt.Sprintf("%s", outputEntry[rule.Input]))
 			if err != nil {
-				log.Debugf("Can't find kubernetes info for IP %v err %v", outputEntry[rule.Input], err)
+				log.Tracef("Can't find kubernetes info for IP %v err %v", outputEntry[rule.Input], err)
 				continue
 			}
 			outputEntry[rule.Output+"_Namespace"] = kubeInfo.Namespace
@@ -125,8 +125,8 @@ func (n *networkTransformer) transform(input map[string]interface{}) map[string]
 }
 
 // newTransformNetwork create a new transform
-func newTransformNetwork(cfg *NetworkCfg) (*networkTransformer, error) {
-	nt := networkTransformer{}
+func newTransformNetwork(cfg *NetworkConfig) (*networkTransformer, error) {
+	nt := networkTransformer{cfg: cfg}
 	err := nt.kube.InitFromConfig(cfg.KubeConfigPath)
 	if err != nil {
 		return nil, err
