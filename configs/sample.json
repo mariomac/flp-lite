@@ -1,0 +1,218 @@
+{
+  "health": {
+    "port": 8080
+  },
+  "log-level": "info",
+  "metrics-settings": {
+    "prefix": "netobserv_",
+    "noPanic": true
+  },
+  "parameters": [
+    {
+      "name": "kafka-read",
+      "ingest": {
+        "type": "kafka",
+        "kafka": {
+          "brokers": [
+            "kafka-cluster-kafka-bootstrap.default"
+          ],
+          "topic": "network-flows",
+          "groupid": "flowlogs-pipeline-transformer",
+          "decoder": {
+            "type": "protobuf"
+          },
+          "tls": null
+        }
+      }
+    },
+    {
+      "name": "enrich",
+      "transform": {
+        "type": "network",
+        "network": {
+          "rules": [
+            {
+              "input": "SrcAddr",
+              "output": "SrcK8S",
+              "type": "add_kubernetes"
+            },
+            {
+              "input": "DstAddr",
+              "output": "DstK8S",
+              "type": "add_kubernetes"
+            },
+            {
+              "input": "DstPort",
+              "output": "Service",
+              "type": "add_service",
+              "parameters": "Proto"
+            },
+            {
+              "input": "SrcAddr",
+              "output": "SrcSubnet",
+              "type": "add_subnet",
+              "parameters": "/16"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "loki",
+      "write": {
+        "type": "loki",
+        "loki": {
+          "url": "http://loki.default.svc:3100/",
+          "tenantID": "netobserv",
+          "batchWait": "1s",
+          "batchSize": 102400,
+          "timeout": "10s",
+          "minBackoff": "1s",
+          "maxBackoff": "5m0s",
+          "maxRetries": 10,
+          "labels": [
+            "SrcK8S_Namespace",
+            "SrcK8S_OwnerName",
+            "DstK8S_Namespace",
+            "DstK8S_OwnerName",
+            "FlowDirection"
+          ],
+          "staticLabels": {
+            "app": "netobserv-flowcollector"
+          },
+          "clientConfig": {
+            "proxy_url": null,
+            "tls_config": {
+              "insecure_skip_verify": false
+            },
+            "follow_redirects": false
+          },
+          "timestampLabel": "TimeFlowEndMs",
+          "timestampScale": "1ms"
+        }
+      }
+    },
+    {
+      "name": "prometheus",
+      "encode": {
+        "type": "prom",
+        "prom": {
+          "metrics": [
+            {
+              "name": "bandwidth_per_source_subnet",
+              "type": "counter",
+              "filter": {
+                "key": "",
+                "value": ""
+              },
+              "valueKey": "Bytes",
+              "labels": [
+                "SrcSubnet"
+              ],
+              "buckets": null
+            },
+            {
+              "name": "network_service_total",
+              "type": "counter",
+              "filter": {
+                "key": "",
+                "value": ""
+              },
+              "valueKey": "",
+              "labels": [
+                "Service"
+              ],
+              "buckets": null
+            },
+            {
+              "name": "node_received_bytes_total",
+              "type": "counter",
+              "filter": {
+                "key": "FlowDirection",
+                "value": "0"
+              },
+              "valueKey": "Bytes",
+              "labels": [
+                "SrcK8S_HostName",
+                "DstK8S_HostName"
+              ],
+              "buckets": null
+            },
+            {
+              "name": "node_sent_bytes_total",
+              "type": "counter",
+              "filter": {
+                "key": "FlowDirection",
+                "value": "1"
+              },
+              "valueKey": "Bytes",
+              "labels": [
+                "SrcK8S_HostName",
+                "DstK8S_HostName"
+              ],
+              "buckets": null
+            },
+            {
+              "name": "received_bytes_total",
+              "type": "counter",
+              "filter": {
+                "key": "FlowDirection",
+                "value": "0"
+              },
+              "valueKey": "Bytes",
+              "labels": [
+                "SrcK8S_Namespace",
+                "DstK8S_Namespace",
+                "SrcK8S_OwnerName",
+                "DstK8S_OwnerName",
+                "SrcK8S_OwnerType",
+                "DstK8S_OwnerType"
+              ],
+              "buckets": null
+            },
+            {
+              "name": "sent_bytes_total",
+              "type": "counter",
+              "filter": {
+                "key": "FlowDirection",
+                "value": "1"
+              },
+              "valueKey": "Bytes",
+              "labels": [
+                "SrcK8S_Namespace",
+                "DstK8S_Namespace",
+                "SrcK8S_OwnerName",
+                "DstK8S_OwnerName",
+                "SrcK8S_OwnerType",
+                "DstK8S_OwnerType"
+              ],
+              "buckets": null
+            }
+          ],
+          "port": 9102,
+          "prefix": "netobserv_"
+        }
+      }
+    }
+  ],
+  "pipeline": [
+    {
+      "name": "kafka-read"
+    },
+    {
+      "name": "enrich",
+      "follows": "kafka-read"
+    },
+    {
+      "name": "loki",
+      "follows": "enrich"
+    },
+    {
+      "name": "prometheus",
+      "follows": "enrich"
+    }
+  ],
+  "profile": {
+    "port": 6060
+  }
+}

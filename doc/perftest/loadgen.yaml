@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: http
+  labels:
+    app.kubernetes.io/name: http
+spec:
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: http
+  replicas: 10
+  template:
+    metadata:
+      name: http
+      labels:
+        app.kubernetes.io/name: http
+    spec:
+      containers:
+      - name: http
+        image: quay.io/rhn_support_memodi/nginx
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+            privileged: false
+        ports:
+          - containerPort: 8080
+            name: http-web-svc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: http-server
+spec:
+  selector:
+    app.kubernetes.io/name: http
+  ports:
+    - name: http-service
+      protocol: TCP
+      port: 80
+      targetPort: http-web-svc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loadgenerator
+  labels:
+    app.kubernetes.io/name: loadgenerator
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: loadgenerator
+  replicas: 10
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: loadgenerator
+      name: loadgenerator
+    spec:
+      containers:
+        - command:
+            - sh
+            - -c
+            - "while : ; do curl --silent http-server:80  2>&1 >  /dev/null ; done"
+          image: quay.io/fedora/fedora
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              privileged: false
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          name: bbx
+          resources: {}
+
