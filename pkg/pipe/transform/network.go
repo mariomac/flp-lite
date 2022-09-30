@@ -25,21 +25,23 @@ import (
 
 	"github.com/mariomac/flplite/pkg/pipe/transform/kubernetes"
 	"github.com/mariomac/flplite/pkg/pipe/transform/netdb"
+	"github.com/mariomac/flplite/pkg/sync/locked"
 	"github.com/mariomac/pipes/pkg/node"
 	"github.com/sirupsen/logrus"
 )
 
 var log = logrus.WithField("component", "transform.Network")
 
-func Network(cfg *NetworkConfig) (node.MiddleFunc[map[string]interface{}, map[string]interface{}], error) {
+func Network(cfg *NetworkConfig) (node.MiddleFunc[locked.Var[map[string]interface{}], locked.Var[map[string]interface{}]], error) {
 	nt, err := newTransformNetwork(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("instantiating network transformer: %w", err)
 	}
-	return func(in <-chan map[string]interface{}, out chan<- map[string]interface{}) {
+	return func(in <-chan locked.Var[map[string]interface{}], out chan<- locked.Var[map[string]interface{}]) {
 		log.Debug("starting network transformation loop")
 		for flow := range in {
-			out <- nt.transform(flow)
+			nt.transform(flow)
+			out <- flow
 		}
 		log.Debug("stopping network transformation loop")
 	}, nil
@@ -51,14 +53,9 @@ type networkTransformer struct {
 	svcNames *netdb.ServiceNames
 }
 
-func (n *networkTransformer) transform(input map[string]interface{}) map[string]interface{} {
-	// convention: clone map before changing it
-	// TODO: adopt FLP's GenericMap clone method
-	// or TODO: bring a lock with the map
-	outputEntry := make(map[string]interface{}, len(input))
-	for k, v := range input {
-		outputEntry[k] = v
-	}
+func (n *networkTransformer) transform(input locked.Var[map[string]interface{}]) {
+	outputEntry, unlock := input.Write()
+	defer unlock()
 
 	// TODO: for efficiency and maintainability, maybe each case in the switch below should be an individual implementation of Transformer
 	for _, rule := range n.cfg.Rules {
@@ -120,8 +117,6 @@ func (n *networkTransformer) transform(input map[string]interface{}) map[string]
 			log.Panicf("unknown type %s for transform.Network rule: %v", rule.Type, rule)
 		}
 	}
-
-	return outputEntry
 }
 
 // newTransformNetwork create a new transform

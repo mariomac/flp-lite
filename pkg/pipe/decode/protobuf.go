@@ -5,6 +5,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/mariomac/flplite/pkg/sync/locked"
 	"github.com/mariomac/pipes/pkg/node"
 	"github.com/netobserv/netobserv-ebpf-agent/pkg/pbflow"
 	"github.com/sirupsen/logrus"
@@ -13,9 +14,9 @@ import (
 
 var log = logrus.WithField("component", "decode.Protobuf")
 
-func Protobuf() node.MiddleFunc[[]byte, map[string]interface{}] {
+func Protobuf() node.MiddleFunc[[]byte, locked.Var[map[string]interface{}]] {
 	log.Debug("creating protobuf decoder")
-	return func(in <-chan []byte, out chan<- map[string]interface{}) {
+	return func(in <-chan []byte, out chan<- locked.Var[map[string]interface{}]) {
 		log.Debug("starting protobuf decoder loop")
 		for pbRaw := range in {
 			record := pbflow.Record{}
@@ -23,7 +24,7 @@ func Protobuf() node.MiddleFunc[[]byte, map[string]interface{}] {
 				log.WithError(err).Debug("can't unmarshall received protobuf flow. Ignoring")
 				continue
 			}
-			out <- pbFlowToMap(&record)
+			out <- locked.For(pbFlowToMap(&record))
 		}
 		log.Debug("exiting protobuf decoder loop")
 	}

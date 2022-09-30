@@ -25,6 +25,7 @@ import (
 
 	logAdapter "github.com/go-kit/kit/log/logrus"
 	jsonIter "github.com/json-iterator/go"
+	"github.com/mariomac/flplite/pkg/sync/locked"
 	"github.com/mariomac/pipes/pkg/node"
 	"github.com/netobserv/loki-client-go/loki"
 	"github.com/netobserv/loki-client-go/pkg/backoff"
@@ -42,13 +43,13 @@ type emitter interface {
 	Handle(labels model.LabelSet, timestamp time.Time, record string) error
 }
 
-func Loki(cfg *LokiConfig) (node.TerminalFunc[map[string]interface{}], error) {
+func Loki(cfg *LokiConfig) (node.TerminalFunc[locked.Var[map[string]interface{}]], error) {
 	log.Debug("instantiating Loki writer")
 	lw, err := newWriteLoki(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("instantiating loki writer: %w", err)
 	}
-	return func(in <-chan map[string]interface{}) {
+	return func(in <-chan locked.Var[map[string]interface{}]) {
 		log.Debug("starting Loki writer loop")
 		for flow := range in {
 			if err := lw.ProcessRecord(flow); err != nil {
@@ -126,21 +127,19 @@ func buildLokiConfig(c *LokiConfig) (loki.Config, error) {
 }
 
 // TODO: this can be split in a "Loki" transformer plus a "Loki" writer
-func (l *lokiWriter) ProcessRecord(in map[string]interface{}) error {
+func (l *lokiWriter) ProcessRecord(in locked.Var[map[string]interface{}]) error {
 	// convention: clone map before changing it
 	// TODO: adopt FLP's GenericMap clone method
 	// or TODO: bring a lock with the map
-	out := make(map[string]interface{}, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
+	out, unlock := in.Write()
+	defer unlock()
 
 	// Add static labels from config
 	labels := model.LabelSet{}
 	for k, v := range l.cfg.StaticLabels {
 		labels[k] = v
 	}
-	l.addLabels(in, labels)
+	l.addLabels(out, labels)
 
 	// Remove labels and configured ignore list from record
 	ignoreList := append(l.cfg.IgnoreList, l.cfg.Labels...)

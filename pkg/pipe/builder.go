@@ -8,11 +8,13 @@ import (
 	"github.com/mariomac/flplite/pkg/pipe/ingest"
 	"github.com/mariomac/flplite/pkg/pipe/transform"
 	"github.com/mariomac/flplite/pkg/pipe/write"
+	"github.com/mariomac/flplite/pkg/sync/locked"
 	"github.com/mariomac/pipes/pkg/node"
 	"github.com/sirupsen/logrus"
 )
 
 const defaultStageBuffer = 50
+
 var log = logrus.WithField("component", "pipe.Builder")
 
 func Build(cfg *ConfigFileStruct) (*node.Start[[]byte], error) {
@@ -22,8 +24,8 @@ func Build(cfg *ConfigFileStruct) (*node.Start[[]byte], error) {
 	// but we don't really care about all the possible combinations of FLP.
 	// We assume the structure: kafka_ingest --> protobuf_decode --> network_enricher --> loki_write
 	var ingester node.StartFuncCtx[[]byte]
-	var enricher node.MiddleFunc[map[string]interface{}, map[string]interface{}]
-	var writer node.TerminalFunc[map[string]interface{}]
+	var enricher node.MiddleFunc[locked.Var[map[string]interface{}], locked.Var[map[string]interface{}]]
+	var writer node.TerminalFunc[locked.Var[map[string]interface{}]]
 	var err error
 	for _, cfg := range cfg.Parameters {
 		if cfg.Ingest != nil && cfg.Ingest.Kafka != nil {
