@@ -25,6 +25,7 @@ import (
 
 	logAdapter "github.com/go-kit/kit/log/logrus"
 	jsonIter "github.com/json-iterator/go"
+	"github.com/mariomac/flplite/pkg/flow"
 	"github.com/mariomac/pipes/pkg/node"
 	"github.com/netobserv/loki-client-go/loki"
 	"github.com/netobserv/loki-client-go/pkg/backoff"
@@ -42,13 +43,13 @@ type emitter interface {
 	Handle(labels model.LabelSet, timestamp time.Time, record string) error
 }
 
-func Loki(cfg *LokiConfig) (node.TerminalFunc[map[string]interface{}], error) {
+func Loki(cfg *LokiConfig) (node.TerminalFunc[*flow.Record], error) {
 	log.Debug("instantiating Loki writer")
 	lw, err := newWriteLoki(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("instantiating loki writer: %w", err)
 	}
-	return func(in <-chan map[string]interface{}) {
+	return func(in <-chan *flow.Record) {
 		log.Debug("starting Loki writer loop")
 		for flow := range in {
 			if err := lw.ProcessRecord(flow); err != nil {
@@ -126,14 +127,9 @@ func buildLokiConfig(c *LokiConfig) (loki.Config, error) {
 }
 
 // TODO: this can be split in a "Loki" transformer plus a "Loki" writer
-func (l *lokiWriter) ProcessRecord(in map[string]interface{}) error {
-	// convention: clone map before changing it
-	// TODO: adopt FLP's GenericMap clone method
-	// or TODO: bring a lock with the map
-	out := make(map[string]interface{}, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
+func (l *lokiWriter) ProcessRecord(in *flow.Record) error {
+	unlock := in.Lock()
+	defer unlock()
 
 	// Add static labels from config
 	labels := model.LabelSet{}
@@ -145,23 +141,23 @@ func (l *lokiWriter) ProcessRecord(in map[string]interface{}) error {
 	// Remove labels and configured ignore list from record
 	ignoreList := append(l.cfg.IgnoreList, l.cfg.Labels...)
 	for _, label := range ignoreList {
-		delete(out, label)
+		delete(in.Values, label)
 	}
 
-	js, err := jsonIter.ConfigDefault.Marshal(out)
+	js, err := jsonIter.ConfigDefault.Marshal(in.Values)
 	if err != nil {
 		return err
 	}
 
-	timestamp := l.extractTimestamp(out)
+	timestamp := l.extractTimestamp(in)
 	return l.client.Handle(labels, timestamp, string(js))
 }
 
-func (l *lokiWriter) extractTimestamp(record map[string]interface{}) time.Time {
+func (l *lokiWriter) extractTimestamp(record *flow.Record) time.Time {
 	if l.cfg.TimestampLabel == "" {
 		return l.timeNow()
 	}
-	timestamp, ok := record[string(l.cfg.TimestampLabel)]
+	timestamp, ok := record.Values[string(l.cfg.TimestampLabel)]
 	if !ok {
 		log.WithField("timestampLabel", l.cfg.TimestampLabel).
 			Warnf("Timestamp label not found in record. Using local time")
@@ -183,10 +179,10 @@ func (l *lokiWriter) extractTimestamp(record map[string]interface{}) time.Time {
 	return time.Unix(tsNanos/int64(time.Second), tsNanos%int64(time.Second))
 }
 
-func (l *lokiWriter) addLabels(record map[string]interface{}, labels model.LabelSet) {
+func (l *lokiWriter) addLabels(record *flow.Record, labels model.LabelSet) {
 	// Add non-static labels from record
 	for _, label := range l.cfg.Labels {
-		val, ok := record[label]
+		val, ok := record.Values[label]
 		if !ok {
 			continue
 		}

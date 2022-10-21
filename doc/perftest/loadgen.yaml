@@ -12,7 +12,7 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: http
-  replicas: 10
+  replicas: 20
   template:
     metadata:
       name: http
@@ -54,7 +54,7 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: loadgenerator
-  replicas: 10
+  replicas: 20
   securityContext:
     runAsNonRoot: true
     seccompProfile:

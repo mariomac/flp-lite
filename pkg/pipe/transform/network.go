@@ -23,6 +23,7 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/mariomac/flplite/pkg/flow"
 	"github.com/mariomac/flplite/pkg/pipe/transform/kubernetes"
 	"github.com/mariomac/flplite/pkg/pipe/transform/netdb"
 	"github.com/mariomac/pipes/pkg/node"
@@ -31,15 +32,16 @@ import (
 
 var log = logrus.WithField("component", "transform.Network")
 
-func Network(cfg *NetworkConfig) (node.MiddleFunc[map[string]interface{}, map[string]interface{}], error) {
+func Network(cfg *NetworkConfig) (node.MiddleFunc[*flow.Record, *flow.Record], error) {
 	nt, err := newTransformNetwork(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("instantiating network transformer: %w", err)
 	}
-	return func(in <-chan map[string]interface{}, out chan<- map[string]interface{}) {
+	return func(in <-chan *flow.Record, out chan<- *flow.Record) {
 		log.Debug("starting network transformation loop")
 		for flow := range in {
-			out <- nt.transform(flow)
+			nt.transform(flow)
+			out <- flow
 		}
 		log.Debug("stopping network transformation loop")
 	}, nil
@@ -51,30 +53,25 @@ type networkTransformer struct {
 	svcNames *netdb.ServiceNames
 }
 
-func (n *networkTransformer) transform(input map[string]interface{}) map[string]interface{} {
-	// convention: clone map before changing it
-	// TODO: adopt FLP's GenericMap clone method
-	// or TODO: bring a lock with the map
-	outputEntry := make(map[string]interface{}, len(input))
-	for k, v := range input {
-		outputEntry[k] = v
-	}
+func (n *networkTransformer) transform(input *flow.Record) {
+	unlock := input.Lock()
+	defer unlock()
 
 	// TODO: for efficiency and maintainability, maybe each case in the switch below should be an individual implementation of Transformer
 	for _, rule := range n.cfg.Rules {
 		switch rule.Type {
 		case "add_subnet":
-			_, ipv4Net, err := net.ParseCIDR(fmt.Sprintf("%v%s", outputEntry[rule.Input], rule.Parameters))
+			_, ipv4Net, err := net.ParseCIDR(fmt.Sprintf("%v%s", input.Values[rule.Input], rule.Parameters))
 			if err != nil {
-				log.Errorf("Can't find subnet for IP %v and prefix length %s - err %v", outputEntry[rule.Input], rule.Parameters, err)
+				log.Errorf("Can't find subnet for IP %v and prefix length %s - err %v", input.Values[rule.Input], rule.Parameters, err)
 				continue
 			}
-			outputEntry[rule.Output] = ipv4Net.String()
+			input.Values[rule.Output] = ipv4Net.String()
 		case "add_service":
-			protocol := fmt.Sprintf("%v", outputEntry[rule.Parameters])
-			portNumber, err := strconv.Atoi(fmt.Sprintf("%v", outputEntry[rule.Input]))
+			protocol := fmt.Sprintf("%v", input.Values[rule.Parameters])
+			portNumber, err := strconv.Atoi(fmt.Sprintf("%v", input.Values[rule.Input]))
 			if err != nil {
-				log.Errorf("Can't convert port to int: Port %v - err %v", outputEntry[rule.Input], err)
+				log.Errorf("Can't convert port to int: Port %v - err %v", input.Values[rule.Input], err)
 				continue
 			}
 			var serviceName string
@@ -88,31 +85,31 @@ func (n *networkTransformer) transform(input map[string]interface{}) map[string]
 			}
 			if serviceName == "" {
 				if err != nil {
-					log.Debugf("Can't find service name for Port %v and protocol %v - err %v", outputEntry[rule.Input], protocol, err)
+					log.Debugf("Can't find service name for Port %v and protocol %v - err %v", input.Values[rule.Input], protocol, err)
 					continue
 				}
 			}
-			outputEntry[rule.Output] = serviceName
+			input.Values[rule.Output] = serviceName
 		case "add_kubernetes":
-			kubeInfo, err := n.kube.GetInfo(fmt.Sprintf("%s", outputEntry[rule.Input]))
+			kubeInfo, err := n.kube.GetInfo(fmt.Sprintf("%s", input.Values[rule.Input]))
 			if err != nil {
-				log.Tracef("Can't find kubernetes info for IP %v err %v", outputEntry[rule.Input], err)
+				log.Tracef("Can't find kubernetes info for IP %v err %v", input.Values[rule.Input], err)
 				continue
 			}
-			outputEntry[rule.Output+"_Namespace"] = kubeInfo.Namespace
-			outputEntry[rule.Output+"_Name"] = kubeInfo.Name
-			outputEntry[rule.Output+"_Type"] = kubeInfo.Type
-			outputEntry[rule.Output+"_OwnerName"] = kubeInfo.Owner.Name
-			outputEntry[rule.Output+"_OwnerType"] = kubeInfo.Owner.Type
+			input.Values[rule.Output+"_Namespace"] = kubeInfo.Namespace
+			input.Values[rule.Output+"_Name"] = kubeInfo.Name
+			input.Values[rule.Output+"_Type"] = kubeInfo.Type
+			input.Values[rule.Output+"_OwnerName"] = kubeInfo.Owner.Name
+			input.Values[rule.Output+"_OwnerType"] = kubeInfo.Owner.Type
 			if rule.Parameters != "" {
 				for labelKey, labelValue := range kubeInfo.Labels {
-					outputEntry[rule.Parameters+"_"+labelKey] = labelValue
+					input.Values[rule.Parameters+"_"+labelKey] = labelValue
 				}
 			}
 			if kubeInfo.HostIP != "" {
-				outputEntry[rule.Output+"_HostIP"] = kubeInfo.HostIP
+				input.Values[rule.Output+"_HostIP"] = kubeInfo.HostIP
 				if kubeInfo.HostName != "" {
-					outputEntry[rule.Output+"_HostName"] = kubeInfo.HostName
+					input.Values[rule.Output+"_HostName"] = kubeInfo.HostName
 				}
 			}
 		default:
@@ -120,8 +117,6 @@ func (n *networkTransformer) transform(input map[string]interface{}) map[string]
 			log.Panicf("unknown type %s for transform.Network rule: %v", rule.Type, rule)
 		}
 	}
-
-	return outputEntry
 }
 
 // newTransformNetwork create a new transform
