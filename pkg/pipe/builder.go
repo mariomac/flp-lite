@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/mariomac/flplite/pkg/flow"
 	"github.com/mariomac/flplite/pkg/pipe/decode"
 	"github.com/mariomac/flplite/pkg/pipe/ingest"
 	"github.com/mariomac/flplite/pkg/pipe/transform"
@@ -22,8 +23,8 @@ func Build(cfg *ConfigFileStruct) (*node.Start[[]byte], error) {
 	// but we don't really care about all the possible combinations of FLP.
 	// We assume the structure: kafka_ingest --> protobuf_decode --> network_enricher --> loki_write
 	var ingester node.StartFuncCtx[[]byte]
-	var enricher node.MiddleFunc[map[string]interface{}, map[string]interface{}]
-	var writer node.TerminalFunc[map[string]interface{}]
+	var enricher node.MiddleFunc[flow.Record, flow.Record]
+	var writer node.TerminalFunc[flow.Record]
 	var err error
 	for _, cfg := range cfg.Parameters {
 		if cfg.Ingest != nil && cfg.Ingest.Kafka != nil {
